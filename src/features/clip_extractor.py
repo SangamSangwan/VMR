@@ -35,13 +35,19 @@ class ClipEmbedder:
         self.model.eval().to(self.device)
         for p in self.model.parameters():
             p.requires_grad = False  # frozen backbone, per project brief
+        self._text_cache = {}
 
     @torch.no_grad()
     def embed_text(self, text: str) -> np.ndarray:
+        if text in self._text_cache:
+            return self._text_cache[text]
         tokens = self.tokenizer([text]).to(self.device)
         feat = self.model.encode_text(tokens)
         feat = feat / feat.norm(dim=-1, keepdim=True)
-        return feat.cpu().numpy()[0]
+        arr = feat.cpu().numpy()[0]
+        self._text_cache[text] = arr
+        return arr
+
 
     @torch.no_grad()
     def embed_frames(self, frames: np.ndarray) -> np.ndarray:

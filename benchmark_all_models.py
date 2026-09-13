@@ -12,6 +12,7 @@ from src.features.clip_extractor import ClipEmbedder
 from src.retrieval.coarse_retrieval import cosine_topk, merge_adjacent_candidates
 from src.grounding.model import MomentDETRLite
 from src.grounding_anchor.model import AnchorGroundingHead
+from src.grounding_anchor.model_v2 import EnhancedAnchorGroundingHead
 from src.grounding_span.model import SpanGroundingHead
 
 
@@ -31,10 +32,13 @@ def evaluate_model(model_type, ckpt_path, items, feature_dir, device, embedder,
         model = MomentDETRLite().to(device)
     elif model_type == "anchor":
         model = AnchorGroundingHead().to(device)
+    elif model_type == "anchor_v2":
+        model = EnhancedAnchorGroundingHead().to(device)
     elif model_type == "span":
         model = SpanGroundingHead().to(device)
     else:
         raise ValueError(f"Unknown model_type: {model_type}")
+
 
     model.load_state_dict(torch.load(ckpt_path, map_location=device))
     model.eval()
@@ -81,11 +85,12 @@ def evaluate_model(model_type, ckpt_path, items, feature_dir, device, embedder,
                     )
                     conf_val = float(conf_probs[best_i])
 
-                elif model_type == "anchor":
+                elif model_type in ("anchor", "anchor_v2"):
                     centers, widths, scores = model(local_feats, q_feat)
                     probs = torch.sigmoid(scores)[0]
                     best_i = int(probs.argmax())
-                    s_sec, e_sec = AnchorGroundingHead.to_timestamps(
+                    decode_fn = EnhancedAnchorGroundingHead.to_timestamps if model_type == "anchor_v2" else AnchorGroundingHead.to_timestamps
+                    s_sec, e_sec = decode_fn(
                         centers[0, best_i].item(), widths[0, best_i].item(),
                         local_bounds[0, 0], local_bounds[-1, 1],
                     )
@@ -138,11 +143,12 @@ def main():
         items = items[:args.limit]
 
     models_to_test = [
+        ("Enhanced Anchor v2 (BiGRU + Charades)", "anchor_v2", "grounding_anchor_v2_charades.pt"),
         ("DETR v2 (fixed conf)", "detr", "grounding_head_v2_confloss.pt"),
-        ("DETR v1 (original)", "detr", "grounding_head.pt"),
         ("Anchor v1 cropfix", "anchor", "grounding_anchor_v1_cropfix.pt"),
         ("Span v1 cropfix", "span", "grounding_span_v1_cropfix.pt"),
     ]
+
 
     alphas = [0.0, 0.4, 0.5, 1.0]
 
