@@ -1,0 +1,37 @@
+# Environments & Caches
+.venv/
+venv/
+env/
+.hf_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Checkpoints and Model Weights
+*.pt
+*.pth
+*.bin
+*.onnx
+checkpoints/
+
+# Datasets and Large Media Files
+data/
+*.mp4
+*.avi
+*.npz
+*.tar.gz
+
+# Logs and Scratch
+train_log*.txt
+*.log
+.system_generated/
+scratch/
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Shell typo directory
+{configs,data,src/
