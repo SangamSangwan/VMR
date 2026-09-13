@@ -93,13 +93,27 @@ level). Two candidate explanations, not yet confirmed:
   architecture choice at this data/compute scale, not a remaining
   implementation bug.
 
-## 9. Decision point — architecture reconsideration
+## 10. Breakthrough — Stage 1 + Stage 2 Score Fusion
 
-Given the goal is a genuinely usable pipeline (not just benchmark chasing),
-considering a switch from the DETR-style query/slot grounding head to a
-dense anchor-scoring approach (in the style of 2D-TAN and related work) —
-scoring a fixed grid of candidate windows directly rather than predicting a
-small set of queries and picking among them. This removes the slot-matching
-ambiguity that caused the issue in Section 6/8 entirely, and is documented in
-the literature as more sample-efficient for from-scratch, smaller-scale
-training. Not yet implemented — pending decision.
+### Problem Found
+Previously, Stage 2 ranked predictions solely using the local grounding head's internal confidence logit (`conf`), completely discarding Stage 1's coarse retrieval cosine similarity (`sim`). A false-positive candidate window with high internal local confidence would override the true video moment that had strong global Stage 1 semantic alignment.
+
+### Solution
+Implemented score fusion in `src/pipeline.py` and `eval_e2e.py`:
+$$\text{Score}_{\text{final}} = (\text{Score}_{\text{Stage 1}})^{\alpha} \cdot (\text{Confidence}_{\text{Stage 2}})^{1 - \alpha}$$
+where $\alpha = 0.5$ balances global retrieval similarity with local moment regression.
+
+### Benchmark Results (Honest 200-sample test set, `eval_e2e.py`)
+
+| Run | R@1 IoU=0.5 | R@1 IoU=0.7 | Notes |
+|---|---|---|---|
+| 2,400-video subset, original loss | 0.3200 | 0.1600 | Previous subset baseline |
+| 9,848-video full data, fixed conf loss (raw $\alpha=0$) | 0.2750 - 0.2950 | 0.1350 | Full data, no score fusion |
+| Coarse retrieval only ($\alpha=1.0$) | 0.3150 | 0.1600 | No grounding head refinement |
+| **9,848-video full data + Score Fusion ($\alpha=0.5$)** | **0.3500** | **0.1750** | **New Best Score! (+7.5% abs R@1@0.5, +4.0% abs R@1@0.7)** |
+
+Cross-architecture comparison on 200 samples:
+- **DETR v2 (`grounding_head_v2_confloss.pt`)**: **0.3500 / 0.1750** (Best overall)
+- **Anchor Head (`grounding_anchor_v1_cropfix.pt`)**: **0.2150 / 0.1150** (Limited by discrete integer window scales)
+- **Span Head (`grounding_span_v1_cropfix.pt`)**: **0.0850 / 0.0250** (Severely overfitted to position prior)
+

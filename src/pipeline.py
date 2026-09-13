@@ -40,13 +40,25 @@ class MomentRetrievalPipeline:
             self.grounder.load_state_dict(torch.load(grounding_ckpt, map_location=self.device))
         self.grounder.eval()
 
-    def run(self, video_path: str, query: str, use_grounding: bool = True) -> List[MomentPrediction]:
+    def run(
+        self,
+        video_path: str,
+        query: str,
+        use_grounding: bool = True,
+        fusion_alpha: float = 0.5,
+    ) -> List[MomentPrediction]:
         # --- Stage 1: coarse retrieval ---
-        window_embs, windows = self.embedder.embed_video(video_path, self.window_sec)
-        query_emb = self.embedder.embed_text(query)
-        bounds = np.array([[w.start_sec, w.end_sec] for w in windows])
+        if video_path.endswith(".npz"):
+            data = np.load(video_path)
+            window_embs = data["embeddings"]
+            bounds = data["window_bounds"]
+            query_emb = self.embedder.embed_text(query)
+        else:
+            window_embs, windows = self.embedder.embed_video(video_path, self.window_sec)
+            query_emb = self.embedder.embed_text(query)
+            bounds = np.array([[w.start_sec, w.end_sec] for w in windows])
 
-        effective_k = min(self.top_k_windows, max(1, len(windows) // 2))
+        effective_k = min(self.top_k_windows, max(1, len(bounds) // 2))
         candidates: List[Candidate] = cosine_topk(
             window_embs, query_emb, bounds, top_k=effective_k
         )
@@ -79,9 +91,12 @@ class MomentRetrievalPipeline:
                 local_bounds[0, 0],
                 local_bounds[-1, 1],
             )
+            stage2_conf = float(conf_probs[best_i])
+            stage1_sim = max(1e-4, cand.score)
+            fused_score = (stage1_sim ** fusion_alpha) * (stage2_conf ** (1.0 - fusion_alpha))
             predictions.append(
-                MomentPrediction(start_sec, end_sec, float(conf_probs[best_i]))
+                MomentPrediction(start_sec, end_sec, fused_score)
             )
 
         predictions.sort(key=lambda p: -p.confidence)
-        return predictions
+        return predictions
